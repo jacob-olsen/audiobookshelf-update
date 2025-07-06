@@ -11,8 +11,6 @@ import (
 	"strings"
 )
 
-var multiScan bool = false
-
 func main() {
 
 	localList := openLocal()
