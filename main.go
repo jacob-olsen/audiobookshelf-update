@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -31,13 +32,13 @@ func main() {
 	}
 
 	//scan books
-	newBookList := getBookList(localList.URL, localList.ApiKey, "8be27d08-3134-4802-8e5d-c13417ed9cf2")
 	var workList []simpelBook
+	newBookList := getBookList(localList.URL, localList.ApiKey, "8be27d08-3134-4802-8e5d-c13417ed9cf2", localList.GotifyUrl, localList.GotifyApi)
 	for _, v := range newBookList {
 		for _, j := range localList.Books {
 			if v.ID == j.ID {
 				if v.PageCount > j.PageCount {
-					workList = append(workList, simpelBook{ID: v.ID, name: v.name, PageCount: v.PageCount - j.PageCount})
+					workList = append(workList, simpelBook{ID: v.ID, Name: v.Name, PageCount: v.PageCount - j.PageCount})
 				}
 			}
 		}
@@ -63,7 +64,7 @@ func main() {
 		json.Unmarshal(JFileLegth, &fileLegth)
 		startTime := fileLegth.Media.Chapters[len(fileLegth.Media.Chapters)-(v.PageCount+1)].End
 
-		fmt.Println("new chapter: " + v.name)
+		fmt.Println("new chapter: " + v.Name)
 
 		for _, j := range users {
 
@@ -103,7 +104,7 @@ func ping(url string, api string) bool {
 	return strings.Contains(string(data), "true")
 }
 
-func getBookList(url string, api string, libary string) (pageList []simpelBook) {
+func getBookList(url string, api string, libary string, gotifyUrl string, gotifyApi string) (pageList []simpelBook) {
 	data, _, err := getAPI(url+"/api/libraries/"+libary+"/items", api)
 	if err != nil {
 		fmt.Println(err)
@@ -113,9 +114,19 @@ func getBookList(url string, api string, libary string) (pageList []simpelBook) 
 	json.Unmarshal(data, &apiData)
 
 	for _, v := range apiData.Results {
-		pageList = append(pageList, simpelBook{ID: v.ID, PageCount: v.Media.NumChapters, name: v.Media.Metadata.Title})
+		if v.Media.NumAudioFiles != v.Media.NumChapters {
+			sendAltert(gotifyUrl, gotifyApi, "need update", v.Media.Metadata.Title+" file count dont match chapters")
+		}
+		pageList = append(pageList, simpelBook{ID: v.ID, PageCount: v.Media.NumChapters, Name: v.Media.Metadata.Title})
 	}
 	return
+}
+
+func sendAltert(gotifyUrl string, gotifyApi string, title string, text string) {
+	fmt.Println(text)
+	if gotifyUrl != "" && gotifyApi != "" {
+		http.PostForm(gotifyUrl+"/message?token="+gotifyApi, url.Values{"message": {text}, "title": {title}})
+	}
 }
 
 func getAPI(url string, apiKey string) (body []byte, statusCode int, err error) {
@@ -205,11 +216,15 @@ type BookList struct {
 type localData struct {
 	URL    string
 	ApiKey string
-	Books  []simpelBook
+
+	GotifyUrl string
+	GotifyApi string
+
+	Books []simpelBook
 }
 type simpelBook struct {
 	ID        string
-	name      string
+	Name      string
 	PageCount int
 }
 
