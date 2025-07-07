@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -67,11 +69,17 @@ func main() {
 		fmt.Println("new chapter: " + v.Name)
 
 		for _, j := range users {
-
+			var i int = 0
 			pro := getMediaProgress(localList.URL, j.Token, v.ID)
-			if pro.IsFinished {
+			for pro.IsFinished {
 				fmt.Println("updating for " + j.Username)
 				updateMediaProgress(localList.URL, j.Token, v.ID, startTime)
+				pro = getMediaProgress(localList.URL, j.Token, v.ID)
+				if i != 0 {
+					fmt.Println("update failde retry " + strconv.Itoa(i))
+					time.Sleep(1 * time.Second)
+				}
+				i++
 			}
 
 		}
