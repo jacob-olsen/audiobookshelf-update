@@ -17,6 +17,8 @@ import (
 func main() {
 
 	localList := openLocal()
+	var failList []faildUpdate
+
 	//test stord info
 	if localList.ApiKey == "" {
 		fmt.Println("api key not set")
@@ -31,6 +33,40 @@ func main() {
 	if !ping(localList.URL, localList.ApiKey) {
 		fmt.Println("cant connet to server")
 		os.Exit(1)
+	}
+
+	if len(localList.Retrys) > 0 {
+		fmt.Println("updates fail last run retrying(" + strconv.Itoa(len(localList.Retrys)) + ")")
+		for _, v := range localList.Retrys {
+
+			var fileLegth fileInfo
+
+			JFileLegth, _, err := getAPI(localList.URL+"/api/items/"+v.BookID, localList.ApiKey)
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			json.Unmarshal(JFileLegth, &fileLegth)
+			startTime := fileLegth.Media.Chapters[v.TagetPage].End
+
+			var i int = 0
+			pro := getMediaProgress(localList.URL, v.ApiKey, v.BookID)
+			for pro.IsFinished {
+				fmt.Println("retrying book (" + v.BookName + ") for " + v.UserName)
+				updateMediaProgress(localList.URL, v.ApiKey, v.BookID, startTime)
+				pro = getMediaProgress(localList.URL, v.ApiKey, v.BookID)
+				if i != 0 {
+					fmt.Println("update failde retry " + strconv.Itoa(i))
+					time.Sleep(1 * time.Second)
+					if i > 3 {
+						failList = append(failList, v)
+						break
+					}
+				}
+				i++
+			}
+		}
+
 	}
 
 	//scan books
@@ -78,6 +114,10 @@ func main() {
 				if i != 0 {
 					fmt.Println("update failde retry " + strconv.Itoa(i))
 					time.Sleep(1 * time.Second)
+					if i > 3 {
+						failList = append(failList, faildUpdate{UserName: j.Username, ApiKey: j.Token, BookName: v.Name, BookID: v.ID, TagetPage: len(fileLegth.Media.Chapters) - (v.PageCount + 1)})
+						break
+					}
 				}
 				i++
 			}
@@ -85,6 +125,7 @@ func main() {
 		}
 	}
 	localList.Books = newBookList
+	localList.Retrys = failList
 	saveLocal(localList)
 }
 
@@ -228,7 +269,8 @@ type localData struct {
 	GotifyUrl string
 	GotifyApi string
 
-	Books []simpelBook
+	Books  []simpelBook
+	Retrys []faildUpdate
 }
 type simpelBook struct {
 	ID        string
@@ -262,4 +304,13 @@ type fileInfo struct {
 
 type jsonPrograsSetter struct {
 	CurrentTime float64 `json:"currentTime"`
+}
+
+type faildUpdate struct {
+	UserName string
+	ApiKey   string
+
+	BookName  string
+	BookID    string
+	TagetPage int
 }
