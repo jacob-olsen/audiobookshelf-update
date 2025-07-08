@@ -105,21 +105,34 @@ func main() {
 		fmt.Println("new chapter: " + v.Name)
 
 		for _, j := range users {
-			var i int = 0
-			pro := getMediaProgress(localList.URL, j.Token, v.ID)
-			for pro.IsFinished {
-				fmt.Println("updating for " + j.Username)
-				updateMediaProgress(localList.URL, j.Token, v.ID, startTime)
-				pro = getMediaProgress(localList.URL, j.Token, v.ID)
-				if i != 0 {
-					fmt.Println("update failde retry " + strconv.Itoa(i))
-					time.Sleep(1 * time.Second)
-					if i > 3 {
-						failList = append(failList, faildUpdate{UserName: j.Username, ApiKey: j.Token, BookName: v.Name, BookID: v.ID, TagetPage: len(fileLegth.Media.Chapters) - (v.PageCount + 1)})
-						break
-					}
+			var onList bool = false
+			for _, nop := range failList {
+				if nop.ApiKey != j.Token {
+					continue
 				}
-				i++
+				if nop.BookID != v.ID {
+					continue
+				}
+				onList = true
+				break
+			}
+			if !onList {
+				var i int = 0
+				pro := getMediaProgress(localList.URL, j.Token, v.ID)
+				for pro.IsFinished {
+					fmt.Println("updating for " + j.Username)
+					updateMediaProgress(localList.URL, j.Token, v.ID, startTime)
+					pro = getMediaProgress(localList.URL, j.Token, v.ID)
+					if i != 0 {
+						fmt.Println("update failde retry " + strconv.Itoa(i))
+						time.Sleep(1 * time.Second)
+						if i > 3 {
+							failList = append(failList, faildUpdate{UserName: j.Username, ApiKey: j.Token, BookName: v.Name, BookID: v.ID, TagetPage: len(fileLegth.Media.Chapters) - (v.PageCount + 1)})
+							break
+						}
+					}
+					i++
+				}
 			}
 
 		}
