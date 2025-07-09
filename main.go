@@ -49,21 +49,8 @@ func main() {
 			json.Unmarshal(JFileLegth, &fileLegth)
 			startTime := fileLegth.Media.Chapters[v.TagetPage].End
 
-			var i int = 0
-			pro := getMediaProgress(localList.URL, v.ApiKey, v.BookID)
-			for pro.IsFinished {
-				fmt.Println("retrying book (" + v.BookName + ") for " + v.UserName)
-				updateMediaProgress(localList.URL, v.ApiKey, v.BookID, startTime)
-				pro = getMediaProgress(localList.URL, v.ApiKey, v.BookID)
-				if i != 0 {
-					fmt.Println("update failde retry " + strconv.Itoa(i))
-					time.Sleep(1 * time.Second)
-					if i > 3 {
-						failList = append(failList, v)
-						break
-					}
-				}
-				i++
+			if !tjekBookForUpdate(localList.URL, v.ApiKey, v.UserName, v.BookID, v.BookName, startTime) {
+				failList = append(failList, v)
 			}
 		}
 
@@ -117,21 +104,8 @@ func main() {
 				break
 			}
 			if !onList {
-				var i int = 0
-				pro := getMediaProgress(localList.URL, j.Token, v.ID)
-				for pro.IsFinished {
-					fmt.Println("updating for " + j.Username)
-					updateMediaProgress(localList.URL, j.Token, v.ID, startTime)
-					pro = getMediaProgress(localList.URL, j.Token, v.ID)
-					if i != 0 {
-						fmt.Println("update failde retry " + strconv.Itoa(i))
-						time.Sleep(1 * time.Second)
-						if i > 3 {
-							failList = append(failList, faildUpdate{UserName: j.Username, ApiKey: j.Token, BookName: v.Name, BookID: v.ID, TagetPage: len(fileLegth.Media.Chapters) - (v.PageCount + 1)})
-							break
-						}
-					}
-					i++
+				if !tjekBookForUpdate(localList.URL, j.Token, j.Username, v.ID, v.Name, startTime) {
+					failList = append(failList, faildUpdate{UserName: j.Username, ApiKey: j.Token, BookName: v.Name, BookID: v.ID, TagetPage: len(fileLegth.Media.Chapters) - (v.PageCount + 1)})
 				}
 			}
 
@@ -140,6 +114,29 @@ func main() {
 	localList.Books = newBookList
 	localList.Retrys = failList
 	saveLocal(localList)
+}
+
+func tjekBookForUpdate(URL string, userKEY string, userName string, bookID string, bookName string, tagetTime float64) bool {
+
+	var i int = 0
+	pro := getMediaProgress(URL, userKEY, bookID)
+	for pro.IsFinished && pro.CurrentTime != tagetTime {
+		if i != 0 {
+			fmt.Println("update failde retry " + strconv.Itoa(i))
+			updateMediaProgress(URL, userKEY, bookID, jsonPrograsComplet{IsFinished: false})
+			time.Sleep(1 * time.Second)
+			if i > 2 {
+				return false
+			}
+		} else {
+			fmt.Println("updating book (" + bookName + ") for " + userName)
+		}
+		updateMediaProgress(URL, userKEY, bookID, jsonPrograsSetter{CurrentTime: tagetTime})
+		pro = getMediaProgress(URL, userKEY, bookID)
+		i++
+	}
+	return true
+
 }
 
 func openLocal() (Data localData) {
@@ -243,11 +240,11 @@ func getMediaProgress(url string, apiKey string, bookID string) (info MediaProgr
 	return
 }
 
-func updateMediaProgress(url string, apiKey string, bookID string, time float64) {
-	data, _ := json.Marshal(jsonPrograsSetter{CurrentTime: time})
+func updateMediaProgress(url string, apiKey string, bookID string, data any) {
+	jsonData, _ := json.Marshal(data)
 
 	client := &http.Client{}
-	req, _ := http.NewRequest("PATCH", url+"/api/me/progress/"+bookID, bytes.NewReader(data))
+	req, _ := http.NewRequest("PATCH", url+"/api/me/progress/"+bookID, bytes.NewReader(jsonData))
 
 	req.Header.Add("Authorization", " Bearer "+apiKey)
 	req.Header.Add("Content-Type", "application/json")
@@ -317,6 +314,9 @@ type fileInfo struct {
 
 type jsonPrograsSetter struct {
 	CurrentTime float64 `json:"currentTime"`
+}
+type jsonPrograsComplet struct {
+	IsFinished bool `json:"isFinished"`
 }
 
 type faildUpdate struct {
