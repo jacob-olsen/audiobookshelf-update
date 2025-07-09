@@ -9,15 +9,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
-	"time"
 )
 
 func main() {
 
 	localList := openLocal()
-	var failList []faildUpdate
 
 	//test stord info
 	if localList.ApiKey == "" {
@@ -33,28 +30,6 @@ func main() {
 	if !ping(localList.URL, localList.ApiKey) {
 		fmt.Println("cant connet to server")
 		os.Exit(1)
-	}
-
-	if len(localList.Retrys) > 0 {
-		fmt.Println("updates fail last run retrying(" + strconv.Itoa(len(localList.Retrys)) + ")")
-		for _, v := range localList.Retrys {
-
-			var fileLegth fileInfo
-
-			JFileLegth, _, err := getAPI(localList.URL+"/api/items/"+v.BookID, localList.ApiKey)
-			if err != nil {
-				fmt.Println(err)
-			}
-
-			json.Unmarshal(JFileLegth, &fileLegth)
-			startTime := fileLegth.Media.Chapters[v.TagetPage].End
-
-			if !tjekBookForUpdate(localList.URL, v.ApiKey, v.UserName, v.BookID, v.BookName, startTime) {
-				fmt.Println("kepe (" + v.BookName + ") on retry list for " + v.UserName)
-				failList = append(failList, v)
-			}
-		}
-
 	}
 
 	//scan books
@@ -93,64 +68,37 @@ func main() {
 		fmt.Println("new chapter: " + v.Name)
 
 		for _, j := range users {
-			var onList bool = false
-			for _, nop := range failList {
-				if nop.ApiKey != j.Token {
-					continue
-				}
-				if nop.BookID != v.ID {
-					continue
-				}
-				onList = true
-				break
-			}
-			if !onList {
-				if !tjekBookForUpdate(localList.URL, j.Token, j.Username, v.ID, v.Name, startTime) {
-					fmt.Println("addet (" + v.Name + ") on retry list for " + j.Username)
-					failList = append(failList, faildUpdate{UserName: j.Username, ApiKey: j.Token, BookName: v.Name, BookID: v.ID, TagetPage: len(fileLegth.Media.Chapters) - (v.PageCount + 1)})
-				}
-			}
+
+			tjekBookForUpdate(localList.URL, j.Token, j.Username, v.ID, v.Name, startTime)
 
 		}
 	}
 	localList.Books = newBookList
-	localList.Retrys = failList
 	saveLocal(localList)
 }
 
-func tjekBookForUpdate(URL string, userKEY string, userName string, bookID string, bookName string, tagetTime float64) bool {
+func tjekBookForUpdate(URL string, userKEY string, userName string, bookID string, bookName string, tagetTime float64) {
 
-	var i int = 1
 	pro := getMediaProgress(URL, userKEY, bookID)
 	if !pro.IsFinished {
-		return true
+		return
 	}
+	courentPos := pro.CurrentTime
 
 	fmt.Println("updater (" + bookName + ") for user (" + userName + ")")
-	updateMediaProgress(URL, userKEY, bookID, jsonPrograsSetter{CurrentTime: tagetTime})
 
+	if pro.Duration == tagetTime {
+		fmt.Println("book status is not update <<30 sec for: " + userName)
+		updateMediaProgress(URL, userKEY, bookID, jsonPrograsSetter{CurrentTime: tagetTime - 30})
+	} else {
+		fmt.Println("setter timmer for new page for: " + userName)
+		updateMediaProgress(URL, userKEY, bookID, jsonPrograsSetter{CurrentTime: tagetTime})
+	}
 	pro = getMediaProgress(URL, userKEY, bookID)
-	if pro.CurrentTime == tagetTime && !pro.IsFinished {
-		fmt.Println("success")
-		return true
+	if pro.IsFinished {
+		fmt.Println("update faild trying to bypass")
+		updateMediaProgress(URL, userKEY, bookID, jsonPrograsSetter{CurrentTime: courentPos - 30})
 	}
-
-	for pro.CurrentTime != tagetTime || pro.IsFinished {
-		fmt.Println("failde retry (" + strconv.Itoa(i) + ") taget time:" + strconv.Itoa(int(tagetTime)) + " courent time:" + strconv.Itoa(int(pro.CurrentTime)) + " spool: " + strconv.Itoa(int(pro.Duration)))
-
-		if i == 1 {
-			updateMediaProgress(URL, userKEY, bookID, jsonPrograsComplet{IsFinished: false, StartedAt: pro.StartedAt, CurrentTime: tagetTime})
-		} else {
-			updateMediaProgress(URL, userKEY, bookID, jsonPrograsSetter{CurrentTime: tagetTime})
-		}
-		time.Sleep(1 * time.Second)
-		if i > 2 {
-			return false
-		}
-		pro = getMediaProgress(URL, userKEY, bookID)
-		i++
-	}
-	return true
 
 }
 
@@ -294,8 +242,7 @@ type localData struct {
 	GotifyUrl string
 	GotifyApi string
 
-	Books  []simpelBook
-	Retrys []faildUpdate
+	Books []simpelBook
 }
 type simpelBook struct {
 	ID        string
@@ -331,18 +278,4 @@ type fileInfo struct {
 
 type jsonPrograsSetter struct {
 	CurrentTime float64 `json:"currentTime"`
-}
-type jsonPrograsComplet struct {
-	IsFinished  bool    `json:"isFinished"`
-	StartedAt   int     `json:"startedAt"`
-	CurrentTime float64 `json:"currentTime"`
-}
-
-type faildUpdate struct {
-	UserName string
-	ApiKey   string
-
-	BookName  string
-	BookID    string
-	TagetPage int
 }
