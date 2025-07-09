@@ -50,6 +50,7 @@ func main() {
 			startTime := fileLegth.Media.Chapters[v.TagetPage].End
 
 			if !tjekBookForUpdate(localList.URL, v.ApiKey, v.UserName, v.BookID, v.BookName, startTime) {
+				fmt.Println("kepe (" + v.BookName + ") on retry list for " + v.UserName)
 				failList = append(failList, v)
 			}
 		}
@@ -105,6 +106,7 @@ func main() {
 			}
 			if !onList {
 				if !tjekBookForUpdate(localList.URL, j.Token, j.Username, v.ID, v.Name, startTime) {
+					fmt.Println("addet (" + v.Name + ") on retry list for " + j.Username)
 					failList = append(failList, faildUpdate{UserName: j.Username, ApiKey: j.Token, BookName: v.Name, BookID: v.ID, TagetPage: len(fileLegth.Media.Chapters) - (v.PageCount + 1)})
 				}
 			}
@@ -124,18 +126,23 @@ func tjekBookForUpdate(URL string, userKEY string, userName string, bookID strin
 		return true
 	}
 
+	fmt.Println("updater (" + bookName + ") for user (" + userName + ")")
 	updateMediaProgress(URL, userKEY, bookID, jsonPrograsSetter{CurrentTime: tagetTime})
 
 	pro = getMediaProgress(URL, userKEY, bookID)
-	if !pro.IsFinished {
+	if pro.CurrentTime == tagetTime && !pro.IsFinished {
+		fmt.Println("success")
 		return true
 	}
 
-	for pro.CurrentTime != tagetTime && pro.IsFinished {
-		fmt.Println("update failde retry " + strconv.Itoa(i))
-		updateMediaProgress(URL, userKEY, bookID, jsonPrograsComplet{IsFinished: false, StartedAt: pro.StartedAt})
-		time.Sleep(1 * time.Second)
-		updateMediaProgress(URL, userKEY, bookID, jsonPrograsSetter{CurrentTime: tagetTime})
+	for pro.CurrentTime != tagetTime || pro.IsFinished {
+		fmt.Println("failde retry (" + strconv.Itoa(i) + ") taget time:" + strconv.Itoa(int(tagetTime)) + " courent time:" + strconv.Itoa(int(pro.CurrentTime)) + " spool: " + strconv.Itoa(int(pro.Duration)))
+
+		if i == 1 {
+			updateMediaProgress(URL, userKEY, bookID, jsonPrograsComplet{IsFinished: false, StartedAt: pro.StartedAt, CurrentTime: tagetTime})
+		} else {
+			updateMediaProgress(URL, userKEY, bookID, jsonPrograsSetter{CurrentTime: tagetTime})
+		}
 		time.Sleep(1 * time.Second)
 		if i > 2 {
 			return false
@@ -309,6 +316,7 @@ type MediaProgress struct {
 	CurrentTime   float64 `json:"currentTime"`
 	IsFinished    bool    `json:"isFinished"`
 	StartedAt     int     `json:"startedAt"`
+	Duration      float64 `json:"duration"`
 }
 
 type fileInfo struct {
@@ -325,8 +333,9 @@ type jsonPrograsSetter struct {
 	CurrentTime float64 `json:"currentTime"`
 }
 type jsonPrograsComplet struct {
-	IsFinished bool `json:"isFinished"`
-	StartedAt  int  `json:"startedAt"`
+	IsFinished  bool    `json:"isFinished"`
+	StartedAt   int     `json:"startedAt"`
+	CurrentTime float64 `json:"currentTime"`
 }
 
 type faildUpdate struct {
