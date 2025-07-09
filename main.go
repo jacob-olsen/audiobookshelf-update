@@ -118,20 +118,28 @@ func main() {
 
 func tjekBookForUpdate(URL string, userKEY string, userName string, bookID string, bookName string, tagetTime float64) bool {
 
-	var i int = 0
+	var i int = 1
 	pro := getMediaProgress(URL, userKEY, bookID)
-	for pro.IsFinished && pro.CurrentTime != tagetTime {
-		if i != 0 {
-			fmt.Println("update failde retry " + strconv.Itoa(i))
-			updateMediaProgress(URL, userKEY, bookID, jsonPrograsComplet{IsFinished: false})
-			time.Sleep(1 * time.Second)
-			if i > 2 {
-				return false
-			}
-		} else {
-			fmt.Println("updating book (" + bookName + ") for " + userName)
-		}
+	if !pro.IsFinished {
+		return true
+	}
+
+	updateMediaProgress(URL, userKEY, bookID, jsonPrograsSetter{CurrentTime: tagetTime})
+
+	pro = getMediaProgress(URL, userKEY, bookID)
+	if !pro.IsFinished {
+		return true
+	}
+
+	for pro.CurrentTime != tagetTime && pro.IsFinished {
+		fmt.Println("update failde retry " + strconv.Itoa(i))
+		updateMediaProgress(URL, userKEY, bookID, jsonPrograsComplet{IsFinished: false, StartedAt: pro.StartedAt})
+		time.Sleep(1 * time.Second)
 		updateMediaProgress(URL, userKEY, bookID, jsonPrograsSetter{CurrentTime: tagetTime})
+		time.Sleep(1 * time.Second)
+		if i > 2 {
+			return false
+		}
 		pro = getMediaProgress(URL, userKEY, bookID)
 		i++
 	}
@@ -300,6 +308,7 @@ type MediaProgress struct {
 	Progress      float64 `json:"progress"`
 	CurrentTime   float64 `json:"currentTime"`
 	IsFinished    bool    `json:"isFinished"`
+	StartedAt     int     `json:"startedAt"`
 }
 
 type fileInfo struct {
@@ -317,6 +326,7 @@ type jsonPrograsSetter struct {
 }
 type jsonPrograsComplet struct {
 	IsFinished bool `json:"isFinished"`
+	StartedAt  int  `json:"startedAt"`
 }
 
 type faildUpdate struct {
