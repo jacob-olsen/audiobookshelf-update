@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"strings"
 )
@@ -63,18 +62,51 @@ func main() {
 		}
 
 		json.Unmarshal(JFileLegth, &fileLegth)
-		startTime := fileLegth.Media.Chapters[len(fileLegth.Media.Chapters)-(v.PageCount+1)].End
+		if v.PageCount >= 2 {
+			startTime := fileLegth.Media.Chapters[len(fileLegth.Media.Chapters)-(v.PageCount+1)].End
 
-		fmt.Println("new chapter: " + v.Name)
+			fmt.Println("new chapter: " + v.Name)
 
-		for _, j := range users {
+			for _, j := range users {
 
-			tjekBookForUpdate(localList.URL, j.Token, j.Username, v.ID, v.Name, startTime)
+				tjekBookForUpdate(localList.URL, j.Token, j.Username, v.ID, v.Name, startTime)
 
+			}
 		}
 	}
 	localList.Books = newBookList
 	saveLocal(localList)
+}
+
+func updateChapters(url string, api string, itemId string, bookName string) {
+	fmt.Println("adding new pagers to: " + bookName)
+	data, _, err := getAPI(url+"/api/items/"+itemId, api)
+	if err != nil {
+		fmt.Println("chapter update faild")
+		return
+	}
+
+	var apiData bookInfo
+	json.Unmarshal(data, &apiData)
+
+	var chapterList bookChapters
+	var addetTime float64 = 0
+
+	for i, v := range apiData.Media.AudioFiles {
+		newTime := addetTime + v.Duration
+		chapterList.Chapters = append(chapterList.Chapters, bookChapter{ID: i, Start: addetTime, End: newTime, Title: string(v.Metadata.FileName[0 : len(v.Metadata.FileName)-4])})
+		addetTime = newTime
+	}
+
+	jsonData, _ := json.Marshal(chapterList)
+
+	client := &http.Client{}
+	req, _ := http.NewRequest("POST", url+"/api/items/"+itemId+"/chapters", bytes.NewReader(jsonData))
+
+	req.Header.Add("Authorization", " Bearer "+api)
+	req.Header.Add("Content-Type", "application/json")
+
+	client.Do(req)
 }
 
 func tjekBookForUpdate(URL string, userKEY string, userName string, bookID string, bookName string, tagetTime float64) {
@@ -103,6 +135,7 @@ func tjekBookForUpdate(URL string, userKEY string, userName string, bookID strin
 }
 
 func openLocal() (Data localData) {
+	fmt.Println("load data...")
 	dataByte, err := os.ReadFile("./info.json")
 	if errors.Is(err, os.ErrNotExist) {
 		saveLocal(Data)
@@ -112,6 +145,7 @@ func openLocal() (Data localData) {
 }
 
 func saveLocal(data localData) {
+	fmt.Println("save data...")
 	jsonData, _ := json.Marshal(data)
 	os.WriteFile("./info.json", jsonData, 0666)
 }
@@ -137,18 +171,12 @@ func getBookList(url string, api string, libary string, gotifyUrl string, gotify
 
 	for _, v := range apiData.Results {
 		if v.Media.NumAudioFiles != v.Media.NumChapters {
-			sendAltert(gotifyUrl, gotifyApi, "need update", v.Media.Metadata.Title+" file count dont match chapters")
+			//sendAltert(gotifyUrl, gotifyApi, "need update", v.Media.Metadata.Title+" file count dont match chapters")
+			updateChapters(url, api, v.ID, v.Media.Metadata.Title)
 		}
 		pageList = append(pageList, simpelBook{ID: v.ID, PageCount: v.Media.NumChapters, Name: v.Media.Metadata.Title})
 	}
 	return
-}
-
-func sendAltert(gotifyUrl string, gotifyApi string, title string, text string) {
-	fmt.Println(text)
-	if gotifyUrl != "" && gotifyApi != "" {
-		http.PostForm(gotifyUrl+"/message?token="+gotifyApi, url.Values{"message": {text}, "title": {title}})
-	}
 }
 
 func getAPI(url string, apiKey string) (body []byte, statusCode int, err error) {
@@ -278,4 +306,27 @@ type fileInfo struct {
 
 type jsonPrograsSetter struct {
 	CurrentTime float64 `json:"currentTime"`
+}
+
+type bookInfo struct {
+	Media struct {
+		AudioFiles []struct {
+			ID       int     `json:"index"`
+			Duration float64 `json:"duration"`
+
+			Metadata struct {
+				FileName string `json:"filename"`
+			} `json:"metadata"`
+		} `json:"audioFiles"`
+	} `json:"media"`
+}
+
+type bookChapter struct {
+	ID    int     `json:"id"`
+	Start float64 `json:"start"`
+	End   float64 `json:"end"`
+	Title string  `json:"title"`
+}
+type bookChapters struct {
+	Chapters []bookChapter `json:"chapters"`
 }
